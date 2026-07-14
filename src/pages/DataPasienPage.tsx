@@ -32,7 +32,8 @@ export default function DataPasienPage() {
     cara_bayar: 'KTP/KK',
     jenis_pasien: 'Rawat Inap',
     status_pengajuan: 'Menunggu Verifikasi',
-    penyebab_penolakan: ''
+    penyebab_penolakan: '',
+    tidak_ada_jkn_kis: 0
   });
 
   const saveLocalPatients = (updatedList: any[]) => {
@@ -72,7 +73,8 @@ export default function DataPasienPage() {
         cara_bayar: patient.cara_bayar || 'KTP/KK',
         jenis_pasien: patient.jenis_pasien || 'Rawat Inap',
         status_pengajuan: patient.status_pengajuan || 'Draft',
-        penyebab_penolakan: patient.penyebab_penolakan || ''
+        penyebab_penolakan: patient.penyebab_penolakan || '',
+        tidak_ada_jkn_kis: patient.tidak_ada_jkn_kis || 0
       });
     } else {
       setFormData({
@@ -87,7 +89,8 @@ export default function DataPasienPage() {
         cara_bayar: 'KTP/KK',
         jenis_pasien: 'Rawat Inap',
         status_pengajuan: 'Draft',
-        penyebab_penolakan: ''
+        penyebab_penolakan: '',
+        tidak_ada_jkn_kis: 0
       });
     }
     setIsModalOpen(true);
@@ -409,7 +412,7 @@ export default function DataPasienPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Nomor KK *</label>
                   <input
@@ -429,6 +432,18 @@ export default function DataPasienPage() {
                     name="no_hp"
                     disabled={isViewOnly}
                     value={formData.no_hp}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Tidak Ada JKN-KIS</label>
+                  <input
+                    type="number"
+                    name="tidak_ada_jkn_kis"
+                    min="0"
+                    disabled={isViewOnly}
+                    value={formData.tidak_ada_jkn_kis}
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 dark:disabled:bg-gray-800"
                   />

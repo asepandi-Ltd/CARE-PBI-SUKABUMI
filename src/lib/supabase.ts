@@ -92,6 +92,7 @@ export const INITIAL_MOCK_PATIENTS = [
     doc_spr: true,
     doc_ktp: true,
     doc_kk: true,
+    tidak_ada_jkn_kis: 0,
     created_at: '2026-07-01T10:00:00Z',
     updated_at: '2026-07-01T10:00:00Z'
   },
@@ -113,6 +114,7 @@ export const INITIAL_MOCK_PATIENTS = [
     doc_spr: true,
     doc_ktp: true,
     doc_kk: true,
+    tidak_ada_jkn_kis: 0,
     created_at: '2026-07-02T11:30:00Z',
     updated_at: '2026-07-03T09:00:00Z'
   },
@@ -134,6 +136,7 @@ export const INITIAL_MOCK_PATIENTS = [
     doc_spr: true,
     doc_ktp: false,
     doc_kk: true,
+    tidak_ada_jkn_kis: 0,
     created_at: '2026-07-03T14:15:00Z',
     updated_at: '2026-07-04T10:30:00Z'
   }
@@ -180,6 +183,7 @@ export const sanitizePatientForSupabase = (p: any) => {
     doc_spr: !!p.doc_spr,
     doc_ktp: !!p.doc_ktp,
     doc_kk: !!p.doc_kk,
+    tidak_ada_jkn_kis: p.tidak_ada_jkn_kis !== undefined && p.tidak_ada_jkn_kis !== null ? Number(p.tidak_ada_jkn_kis) : 0,
     created_at: p.created_at || new Date().toISOString(),
     updated_at: p.updated_at || new Date().toISOString()
   };

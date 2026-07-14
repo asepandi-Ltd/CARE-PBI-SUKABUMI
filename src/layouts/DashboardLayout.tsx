@@ -95,12 +95,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
     }
   };
 
+  const isSuperAdmin = profile?.role === 'Super Admin';
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Data Pasien', path: '/data-pasien', icon: Users },
     { name: 'Rekap Laporan', path: '/laporan', icon: FileText },
     { name: 'Monitoring Pengajuan', path: '/monitoring', icon: Activity },
-    { name: 'Pengaturan', path: '/pengaturan', icon: Settings },
+    ...(isSuperAdmin ? [{ name: 'Pengaturan', path: '/pengaturan', icon: Settings }] : []),
   ];
 
   return (
@@ -203,7 +204,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
+        <div className="flex-1 overflow-auto p-6 pb-24 md:pb-6 bg-gray-50 dark:bg-gray-900">
           {isSupabaseConfigured && dbStatus !== 'connected' && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400 p-4 rounded-xl flex items-start gap-3 shadow-sm mb-6 animate-fadeIn">
               <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -252,6 +253,59 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
           <Outlet />
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around items-center py-2 px-1 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname.startsWith(item.path);
+          // Let's create shorter labels for mobile to prevent overflow
+          let mobileLabel = item.name;
+          if (item.name === 'Data Pasien') mobileLabel = 'Pasien';
+          if (item.name === 'Rekap Laporan') mobileLabel = 'Laporan';
+          if (item.name === 'Monitoring Pengajuan') mobileLabel = 'Monitor';
+          if (item.name === 'Pengaturan') mobileLabel = 'Setelan';
+
+          return (
+            <Link
+              key={item.name}
+              to={item.path}
+              className={`flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold transition-colors ${
+                isActive 
+                  ? 'text-indigo-600 dark:text-indigo-400 font-bold' 
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
+            >
+              <Icon className="h-5 w-5 mb-0.5" />
+              <span className="truncate">{mobileLabel}</span>
+            </Link>
+          );
+        })}
+        
+        {/* Logout on mobile */}
+        <button
+          onClick={() => {
+            Swal.fire({
+              title: 'Keluar Aplikasi?',
+              text: "Anda akan keluar dari sesi ini.",
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#4f46e5',
+              cancelButtonColor: '#ef4444',
+              confirmButtonText: 'Ya, Keluar',
+              cancelButtonText: 'Batal'
+            }).then((result) => {
+              if (result.isConfirmed) {
+                signOut();
+              }
+            });
+          }}
+          className="flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-semibold text-red-500 dark:text-red-400"
+        >
+          <LogOut className="h-5 w-5 mb-0.5" />
+          <span>Keluar</span>
+        </button>
+      </nav>
     </div>
   );
 }
