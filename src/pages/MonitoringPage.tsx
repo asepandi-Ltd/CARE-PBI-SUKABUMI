@@ -171,24 +171,6 @@ export default function MonitoringPage() {
     }
   };
 
-  const handleSaveTidakAdaJknKis = async (id: string, value: string) => {
-    const numVal = value === '' ? 0 : parseInt(value, 10);
-    const cleanVal = isNaN(numVal) ? 0 : numVal;
-    const updatedList = patients.map(p => 
-      p.id === id ? { ...p, tidak_ada_jkn_kis: cleanVal, updated_at: new Date().toISOString() } : p
-    );
-    saveLocalPatients(updatedList);
-    try {
-      const { error } = await supabase.from('patients').update({ tidak_ada_jkn_kis: cleanVal, updated_at: new Date().toISOString() }).eq('id', id);
-      if (error && (error.message?.includes('tidak_ada_jkn_kis') || error.code === '42703')) {
-        console.warn('Column tidak_ada_jkn_kis does not exist. Retrying update with updated_at only...');
-        await supabase.from('patients').update({ updated_at: new Date().toISOString() }).eq('id', id);
-      }
-    } catch (e) {
-      console.warn('Supabase save tidak_ada_jkn_kis error:', e);
-    }
-  };
-
   const filteredPatients = patients.filter(p => 
     p.nama?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.nik?.includes(searchTerm) ||
@@ -242,7 +224,6 @@ export default function MonitoringPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status Warning</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tanggal SPR</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">No SPR</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tidak Ada JKN-KIS</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Nama / NIK</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Aksi</th>
@@ -251,13 +232,13 @@ export default function MonitoringPage() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
+                    <td colSpan={6} className="px-6 py-12 text-center">
                       <div className="flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>
                     </td>
                   </tr>
                 ) : filteredPatients.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                       Tidak ada pengajuan ditemukan.
                     </td>
                   </tr>
@@ -301,16 +282,6 @@ export default function MonitoringPage() {
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-sm font-semibold text-gray-900 dark:text-white">
                           {patient.no_spr}
-                        </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="number"
-                            min="0"
-                            value={patient.tidak_ada_jkn_kis !== undefined && patient.tidak_ada_jkn_kis !== null ? patient.tidak_ada_jkn_kis : ''}
-                            onChange={(e) => handleSaveTidakAdaJknKis(patient.id, e.target.value)}
-                            placeholder="0"
-                            className="w-48 px-2.5 py-1 text-sm font-mono border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          />
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap text-sm">
                           <div className="font-semibold text-gray-900 dark:text-white">{patient.nama}</div>
