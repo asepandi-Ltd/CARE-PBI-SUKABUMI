@@ -179,7 +179,11 @@ export default function MonitoringPage() {
     );
     saveLocalPatients(updatedList);
     try {
-      await supabase.from('patients').update({ tidak_ada_jkn_kis: cleanVal, updated_at: new Date().toISOString() }).eq('id', id);
+      const { error } = await supabase.from('patients').update({ tidak_ada_jkn_kis: cleanVal, updated_at: new Date().toISOString() }).eq('id', id);
+      if (error && (error.message?.includes('tidak_ada_jkn_kis') || error.code === '42703')) {
+        console.warn('Column tidak_ada_jkn_kis does not exist. Retrying update with updated_at only...');
+        await supabase.from('patients').update({ updated_at: new Date().toISOString() }).eq('id', id);
+      }
     } catch (e) {
       console.warn('Supabase save tidak_ada_jkn_kis error:', e);
     }

@@ -123,7 +123,16 @@ export default function DataPasienPage() {
         // Try real Supabase safely
         try {
           const sanitized = sanitizePatientForSupabase(updatedPatient);
-          const { error } = await supabase.from('patients').update(sanitized).eq('id', selectedPatient.id);
+          let { error } = await supabase.from('patients').update(sanitized).eq('id', selectedPatient.id);
+          
+          // Fallback if column 'tidak_ada_jkn_kis' doesn't exist in Supabase DB
+          if (error && (error.message?.includes('tidak_ada_jkn_kis') || error.code === '42703')) {
+            console.warn('Column tidak_ada_jkn_kis not found, retrying update without it...');
+            const { tidak_ada_jkn_kis, ...rest } = sanitized;
+            const { error: retryError } = await supabase.from('patients').update(rest).eq('id', selectedPatient.id);
+            error = retryError;
+          }
+          
           if (error) console.warn('Supabase edit warning:', error.message);
         } catch (supabaseErr) {
           console.warn('Supabase connection or table not found, saved to local storage:', supabaseErr);
@@ -140,6 +149,7 @@ export default function DataPasienPage() {
           doc_spr: false,
           doc_ktp: false,
           doc_kk: false,
+          created_by: profile?.id && !profile.id.startsWith('mock-') ? profile.id : null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -149,7 +159,16 @@ export default function DataPasienPage() {
         // Try real Supabase safely
         try {
           const sanitized = sanitizePatientForSupabase(newPatient);
-          const { error } = await supabase.from('patients').insert([sanitized]);
+          let { error } = await supabase.from('patients').insert([sanitized]);
+          
+          // Fallback if column 'tidak_ada_jkn_kis' doesn't exist in Supabase DB
+          if (error && (error.message?.includes('tidak_ada_jkn_kis') || error.code === '42703')) {
+            console.warn('Column tidak_ada_jkn_kis not found, retrying insert without it...');
+            const { tidak_ada_jkn_kis, ...rest } = sanitized;
+            const { error: retryError } = await supabase.from('patients').insert([rest]);
+            error = retryError;
+          }
+          
           if (error) console.warn('Supabase insert warning:', error.message);
         } catch (supabaseErr) {
           console.warn('Supabase connection or table not found, saved to local storage:', supabaseErr);

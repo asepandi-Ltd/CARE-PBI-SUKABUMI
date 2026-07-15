@@ -164,7 +164,14 @@ export const getLocalPatients = (): any[] => {
   return INITIAL_MOCK_PATIENTS;
 };
 
-export const sanitizePatientForSupabase = (p: any) => {
+const isValidUUID = (id: string | null | undefined): boolean => {
+  if (!id) return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+};
+
+export const sanitizePatientForSupabase = (p: any, currentUserId?: string) => {
+  const createdBy = p.created_by || currentUserId || null;
   return {
     id: (p.id && p.id.length >= 15 && p.id.includes('-')) ? p.id : generateUUID(),
     no_spr: p.no_spr || '',
@@ -184,6 +191,7 @@ export const sanitizePatientForSupabase = (p: any) => {
     doc_ktp: !!p.doc_ktp,
     doc_kk: !!p.doc_kk,
     tidak_ada_jkn_kis: p.tidak_ada_jkn_kis !== undefined && p.tidak_ada_jkn_kis !== null ? Number(p.tidak_ada_jkn_kis) : 0,
+    created_by: isValidUUID(createdBy) ? createdBy : null,
     created_at: p.created_at || new Date().toISOString(),
     updated_at: p.updated_at || new Date().toISOString()
   };
@@ -221,15 +229,37 @@ export const fetchAndSyncPatients = async (): Promise<{ data: any[]; isSynced: b
     );
 
     if (unsyncedLocal.length > 0) {
-      const sanitizedToInsert = unsyncedLocal.map(sanitizePatientForSupabase);
+      const sanitizedToInsert = unsyncedLocal.map(p => sanitizePatientForSupabase(p));
       
-      const { error: insertError } = await supabase
+      let { error: insertError } = await supabase
         .from('patients')
         .insert(sanitizedToInsert);
 
+      // Handle missing 'tidak_ada_jkn_kis' column on old Supabase tables on the fly
+      if (insertError && (insertError.message?.includes('tidak_ada_jkn_kis') || insertError.code === '42703')) {
+        console.warn('Column tidak_ada_jkn_kis not found in Supabase table. Retrying insert without it...');
+        const retriedPayload = sanitizedToInsert.map(p => {
+          const { tidak_ada_jkn_kis, ...rest } = p as any;
+          return rest;
+        });
+        const { error: retryError } = await supabase
+          .from('patients')
+          .insert(retriedPayload);
+        insertError = retryError;
+      }
+
       if (insertError) {
         console.error('Error auto-syncing local patients to Supabase:', insertError);
-        // Fallback: we still proceed with fetching latest data, or merge
+        // CRITICAL: DO NOT overwrite local storage to delete unsynced data!
+        // We will merge local and remote lists instead!
+        const mergedList = [...remotePatients];
+        unsyncedLocal.forEach(localP => {
+          if (!remoteIdSet.has(localP.id) && !remoteNikSet.has(localP.nik)) {
+            mergedList.push(localP);
+          }
+        });
+        localStorage.setItem('care_pbi_patients', JSON.stringify(mergedList));
+        return { data: mergedList, isSynced: false, error: insertError.message };
       } else {
         // Fetch again after sync to get updated remote state
         const { data: updatedRemote } = await supabase
@@ -238,15 +268,31 @@ export const fetchAndSyncPatients = async (): Promise<{ data: any[]; isSynced: b
           .order('created_at', { ascending: false });
         
         if (updatedRemote) {
-          localStorage.setItem('care_pbi_patients', JSON.stringify(updatedRemote));
-          return { data: updatedRemote, isSynced: true, error: null };
+          // Keep local values for tidak_ada_jkn_kis if they are missing or 0 in remote (since column might not exist)
+          const mergedRemoteWithLocal = updatedRemote.map(remoteP => {
+            const localP = localList.find(p => p.id === remoteP.id || p.nik === remoteP.nik);
+            if (localP && localP.tidak_ada_jkn_kis) {
+              return { ...remoteP, tidak_ada_jkn_kis: localP.tidak_ada_jkn_kis };
+            }
+            return remoteP;
+          });
+          localStorage.setItem('care_pbi_patients', JSON.stringify(mergedRemoteWithLocal));
+          return { data: mergedRemoteWithLocal, isSynced: true, error: null };
         }
       }
     }
 
     // Merge and update local storage with remote database state
-    localStorage.setItem('care_pbi_patients', JSON.stringify(remotePatients));
-    return { data: remotePatients, isSynced: true, error: null };
+    // Let's also preserve local tidak_ada_jkn_kis if they exist locally
+    const mergedRemoteWithLocal = remotePatients.map(remoteP => {
+      const localP = localList.find(p => p.id === remoteP.id || p.nik === remoteP.nik);
+      if (localP && localP.tidak_ada_jkn_kis) {
+        return { ...remoteP, tidak_ada_jkn_kis: localP.tidak_ada_jkn_kis };
+      }
+      return remoteP;
+    });
+    localStorage.setItem('care_pbi_patients', JSON.stringify(mergedRemoteWithLocal));
+    return { data: mergedRemoteWithLocal, isSynced: true, error: null };
 
   } catch (err: any) {
     console.warn('Supabase sync warning:', err.message || err);
