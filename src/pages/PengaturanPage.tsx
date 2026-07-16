@@ -6,6 +6,7 @@ import {
   FileJson, Key, AlertCircle, RefreshCw, Server, Video
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 import Swal from 'sweetalert2';
 
 const BACKGROUND_PRESETS = [
@@ -79,6 +80,10 @@ export default function PengaturanPage() {
   const [welcomeDesc, setWelcomeDesc] = useState(localStorage.getItem('care_pbi_welcome_desc') || 'Platform digital terpadu untuk pencatatan, monitoring, pelaporan, dan evaluasi pengajuan pasien menjadi peserta BPJS PBI secara cepat, akurat, aman, dan real-time.');
   const [welcomeBg, setWelcomeBg] = useState(localStorage.getItem('care_pbi_welcome_bg') || BACKGROUND_PRESETS[0].url);
 
+  // Supabase credentials input state
+  const [inputUrl, setInputUrl] = useState(localStorage.getItem('supabase_url') || '');
+  const [inputKey, setInputKey] = useState(localStorage.getItem('supabase_anon_key') || '');
+
   useEffect(() => {
     checkConnection();
   }, []);
@@ -104,6 +109,71 @@ export default function PengaturanPage() {
       setConnectionStatus('disconnected');
       setConnError(err?.message || 'Gagal menghubungi server database Supabase.');
     }
+  };
+
+  const handleSaveCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputUrl.trim() || !inputKey.trim()) {
+      Swal.fire('Peringatan', 'Harap isi kedua kolom URL dan ANON KEY!', 'warning');
+      return;
+    }
+
+    const cleanUrl = inputUrl.trim().replace(/\/$/, '');
+    const cleanKey = inputKey.trim();
+
+    localStorage.setItem('supabase_url', cleanUrl);
+    localStorage.setItem('supabase_anon_key', cleanKey);
+
+    Swal.fire({
+      title: 'Sedang Menghubungkan...',
+      text: 'Mencoba melakukan verifikasi koneksi ke Supabase...',
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    try {
+      // Re-create temporary client to test connection
+      const testClient = createClient(cleanUrl, cleanKey);
+      const { error } = await testClient.from('patients').select('id').limit(1);
+
+      if (error) {
+        throw error;
+      }
+
+      Swal.fire({
+        title: 'Koneksi Berhasil!',
+        text: 'Kredensial valid dan berhasil terhubung ke tabel "patients" di Supabase.',
+        icon: 'success',
+        confirmButtonColor: '#4f46e5'
+      }).then(() => {
+        window.location.reload();
+      });
+    } catch (err: any) {
+      console.error(err);
+      Swal.fire({
+        title: 'Koneksi Gagal',
+        text: `Kredensial disimpan tetapi gagal terhubung ke tabel: ${err?.message || 'Pastikan tabel "patients" sudah dibuat menggunakan script SQL di bawah.'}`,
+        icon: 'error',
+        confirmButtonColor: '#4f46e5'
+      }).then(() => {
+        window.location.reload();
+      });
+    }
+  };
+
+  const handleClearCredentials = () => {
+    localStorage.removeItem('supabase_url');
+    localStorage.removeItem('supabase_anon_key');
+    Swal.fire({
+      title: 'Kredensial Dihapus',
+      text: 'Kredensial khusus lokal berhasil dihapus. Aplikasi akan kembali menggunakan variable lingkungan bawaan.',
+      icon: 'info',
+      confirmButtonColor: '#4f46e5'
+    }).then(() => {
+      window.location.reload();
+    });
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -246,6 +316,7 @@ CREATE TABLE IF NOT EXISTS public.patients (
     doc_spr BOOLEAN DEFAULT FALSE,
     doc_ktp BOOLEAN DEFAULT FALSE,
     doc_kk BOOLEAN DEFAULT FALSE,
+    created_by UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -591,6 +662,56 @@ CREATE POLICY "Allow public delete" ON public.patients FOR DELETE USING (true);`
                   </p>
                 </div>
               </div>
+
+              {/* FORM UNTUK INPUT KREDENSIAL SUPABASE SECARA DINAMIS */}
+              <form onSubmit={handleSaveCredentials} className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 space-y-4">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <Settings className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Atur Kredensial Database Supabase (Local Browser)
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Jika Anda tidak menggunakan variable lingkungan container (.env), Anda dapat langsung menempelkan kredensial proyek Supabase Anda di bawah ini. Kredensial akan disimpan dengan aman di penyimpanan lokal peramban Anda.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">SUPABASE URL</label>
+                    <input
+                      type="text"
+                      value={inputUrl}
+                      onChange={(e) => setInputUrl(e.target.value)}
+                      placeholder="https://your-project.supabase.co"
+                      className="w-full px-3 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">SUPABASE ANON KEY</label>
+                    <input
+                      type="text"
+                      value={inputKey}
+                      onChange={(e) => setInputKey(e.target.value)}
+                      placeholder="eyJh..."
+                      className="w-full px-3 py-2 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  { (localStorage.getItem('supabase_url') || localStorage.getItem('supabase_anon_key')) && (
+                    <button
+                      type="button"
+                      onClick={handleClearCredentials}
+                      className="px-4 py-2 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 rounded-lg transition-all"
+                    >
+                      Hapus Kredensial
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                  >
+                    Simpan &amp; Hubungkan
+                  </button>
+                </div>
+              </form>
 
               {/* STEPS TO CONNECT SUPABASE */}
               <div className="space-y-4 pt-2">

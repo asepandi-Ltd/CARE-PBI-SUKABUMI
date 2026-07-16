@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, getLocalPatients, fetchAndSyncPatients, generateUUID, sanitizePatientForSupabase } from '../lib/supabase';
+import { supabase, getLocalPatients, fetchAndSyncPatients, generateUUID, sanitizePatientForSupabase, isSupabaseConfigured } from '../lib/supabase';
 import { Plus, Search, Filter, Edit, Trash2, FileText, Download, X, Calendar, User, CreditCard, MapPin, Eye, AlertCircle } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { useAuthStore } from '../store/authStore';
@@ -106,6 +106,72 @@ export default function DataPasienPage() {
       return;
     }
 
+    // 1. Validate local duplicate NIK
+    const duplicateNIK = patients.find(p => 
+      p.nik?.trim() === formData.nik?.trim() && 
+      (!selectedPatient || p.id !== selectedPatient.id)
+    );
+
+    if (duplicateNIK) {
+      Swal.fire({
+        title: 'Penyimpanan Gagal',
+        html: `
+          <div class="text-left space-y-2 mt-2">
+            <p class="font-semibold text-rose-600 dark:text-rose-400">NIK sudah terdaftar sebelumnya!</p>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              NIK <strong>${formData.nik}</strong> yang Anda masukkan sudah terdaftar atas nama pasien:
+            </p>
+            <div class="p-3 bg-rose-50 dark:bg-rose-950/20 rounded-lg border border-rose-100 dark:border-rose-900/40">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Nama Pasien:</p>
+              <p class="font-bold text-gray-900 dark:text-white text-sm">${duplicateNIK.nama}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">No. SPR:</p>
+              <p class="font-mono text-gray-800 dark:text-gray-200 text-xs">${duplicateNIK.no_spr}</p>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Setiap pasien BPJS PBI harus memiliki NIK yang unik. Harap periksa kembali NIK yang Anda masukkan.
+            </p>
+          </div>
+        `,
+        icon: 'error',
+        confirmButtonColor: '#e11d48',
+        confirmButtonText: 'Perbaiki Data'
+      });
+      return;
+    }
+
+    // 2. Validate local duplicate No. SPR
+    const duplicateSPR = patients.find(p => 
+      p.no_spr?.trim() === formData.no_spr?.trim() && 
+      (!selectedPatient || p.id !== selectedPatient.id)
+    );
+
+    if (duplicateSPR) {
+      Swal.fire({
+        title: 'Penyimpanan Gagal',
+        html: `
+          <div class="text-left space-y-2 mt-2">
+            <p class="font-semibold text-rose-600 dark:text-rose-400">Nomor SPR sudah terdaftar sebelumnya!</p>
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+              No. SPR <strong>${formData.no_spr}</strong> yang Anda masukkan sudah terdaftar atas nama pasien:
+            </p>
+            <div class="p-3 bg-rose-50 dark:bg-rose-950/20 rounded-lg border border-rose-100 dark:border-rose-900/40">
+              <p class="text-xs text-gray-500 dark:text-gray-400">Nama Pasien:</p>
+              <p class="font-bold text-gray-900 dark:text-white text-sm">${duplicateSPR.nama}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">NIK:</p>
+              <p class="font-mono text-gray-800 dark:text-gray-200 text-xs">${duplicateSPR.nik}</p>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              Setiap pasien BPJS PBI harus memiliki Nomor SPR yang unik. Harap periksa kembali No. SPR yang Anda masukkan.
+            </p>
+          </div>
+        `,
+        icon: 'error',
+        confirmButtonColor: '#e11d48',
+        confirmButtonText: 'Perbaiki Data'
+      });
+      return;
+    }
+
     try {
       if (selectedPatient) {
         // Edit mode
@@ -114,18 +180,58 @@ export default function DataPasienPage() {
           ...formData, 
           updated_at: new Date().toISOString() 
         };
+        
+        let hasDbUniqueError = false;
+
+        // Try real Supabase safely
+        if (isSupabaseConfigured) {
+          try {
+            const sanitized = sanitizePatientForSupabase(updatedPatient);
+            let { error } = await supabase.from('patients').update(sanitized).eq('id', selectedPatient.id);
+            
+            if (error && (error.message?.includes('created_by') || error.code === '42703')) {
+              console.warn('Column created_by not found, retrying update without it...');
+              const { created_by, ...rest } = sanitized;
+              const { error: retryError } = await supabase.from('patients').update(rest).eq('id', selectedPatient.id);
+              error = retryError;
+            }
+            
+            if (error) {
+              console.error('Supabase edit error:', error);
+              if (error.code === '23505' || error.message?.includes('patients_nik_key') || error.message?.includes('duplicate key') || error.message?.includes('violates unique constraint')) {
+                hasDbUniqueError = true;
+                Swal.fire({
+                  title: 'Penyimpanan Gagal (Server)',
+                  html: `
+                    <div class="text-left space-y-2 mt-2">
+                      <p class="font-semibold text-rose-600 dark:text-rose-400">NIK atau No. SPR sudah terdaftar di server database!</p>
+                      <p class="text-sm text-gray-700 dark:text-gray-300">
+                        NIK <strong>${formData.nik}</strong> atau No. SPR <strong>${formData.no_spr}</strong> sudah terdaftar di database server Supabase.
+                      </p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Harap gunakan kombinasi NIK dan No. SPR yang unik atau periksa kembali isian Anda.
+                      </p>
+                    </div>
+                  `,
+                  icon: 'error',
+                  confirmButtonColor: '#e11d48',
+                  confirmButtonText: 'Perbaiki Data'
+                });
+              } else {
+                console.warn('Supabase edit warning:', error.message);
+              }
+            }
+          } catch (supabaseErr) {
+            console.warn('Supabase connection or table not found, saved to local storage:', supabaseErr);
+          }
+        }
+
+        if (hasDbUniqueError) {
+          return; // Halt local storage write so we don't desync with duplicate key
+        }
+
         const updatedList = patients.map(p => p.id === selectedPatient.id ? updatedPatient : p);
         saveLocalPatients(updatedList);
-        
-        // Try real Supabase safely
-        try {
-          const sanitized = sanitizePatientForSupabase(updatedPatient);
-          const { error } = await supabase.from('patients').update(sanitized).eq('id', selectedPatient.id);
-          
-          if (error) console.warn('Supabase edit warning:', error.message);
-        } catch (supabaseErr) {
-          console.warn('Supabase connection or table not found, saved to local storage:', supabaseErr);
-        }
         
         Swal.fire('Berhasil!', 'Data pasien berhasil diperbarui.', 'success');
       } else {
@@ -142,18 +248,58 @@ export default function DataPasienPage() {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-        const updatedList = [newPatient, ...patients];
-        saveLocalPatients(updatedList);
+
+        let hasDbUniqueError = false;
 
         // Try real Supabase safely
-        try {
-          const sanitized = sanitizePatientForSupabase(newPatient);
-          const { error } = await supabase.from('patients').insert([sanitized]);
-          
-          if (error) console.warn('Supabase insert warning:', error.message);
-        } catch (supabaseErr) {
-          console.warn('Supabase connection or table not found, saved to local storage:', supabaseErr);
+        if (isSupabaseConfigured) {
+          try {
+            const sanitized = sanitizePatientForSupabase(newPatient);
+            let { error } = await supabase.from('patients').insert([sanitized]);
+            
+            if (error && (error.message?.includes('created_by') || error.code === '42703')) {
+              console.warn('Column created_by not found, retrying insert without it...');
+              const { created_by, ...rest } = sanitized;
+              const { error: retryError } = await supabase.from('patients').insert([rest]);
+              error = retryError;
+            }
+            
+            if (error) {
+              console.error('Supabase insert error:', error);
+              if (error.code === '23505' || error.message?.includes('patients_nik_key') || error.message?.includes('duplicate key') || error.message?.includes('violates unique constraint')) {
+                hasDbUniqueError = true;
+                Swal.fire({
+                  title: 'Penyimpanan Gagal (Server)',
+                  html: `
+                    <div class="text-left space-y-2 mt-2">
+                      <p class="font-semibold text-rose-600 dark:text-rose-400">NIK atau No. SPR sudah terdaftar di server database!</p>
+                      <p class="text-sm text-gray-700 dark:text-gray-300">
+                        NIK <strong>${formData.nik}</strong> atau No. SPR <strong>${formData.no_spr}</strong> sudah terdaftar di database server Supabase.
+                      </p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Harap gunakan kombinasi NIK dan No. SPR yang unik atau periksa kembali isian Anda.
+                      </p>
+                    </div>
+                  `,
+                  icon: 'error',
+                  confirmButtonColor: '#e11d48',
+                  confirmButtonText: 'Perbaiki Data'
+                });
+              } else {
+                console.warn('Supabase insert warning:', error.message);
+              }
+            }
+          } catch (supabaseErr) {
+            console.warn('Supabase connection or table not found, saved to local storage:', supabaseErr);
+          }
         }
+
+        if (hasDbUniqueError) {
+          return; // Halt local storage write so we don't desync with duplicate key
+        }
+
+        const updatedList = [newPatient, ...patients];
+        saveLocalPatients(updatedList);
 
         Swal.fire('Berhasil!', 'Pasien baru berhasil ditambahkan.', 'success');
       }

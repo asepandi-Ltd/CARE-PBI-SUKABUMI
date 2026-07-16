@@ -39,8 +39,17 @@ const sanitizeKey = (key: string | undefined): string => {
   return cleaned;
 };
 
-const rawUrl = (import.meta as any).env.NEXT_PUBLIC_SUPABASE_URL || (import.meta as any).env.VITE_SUPABASE_URL;
-const rawKey = (import.meta as any).env.NEXT_PUBLIC_SUPABASE_ANON_KEY || (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+const getLocalCredential = (key: string): string => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage.getItem(key) || '';
+    }
+  } catch (e) {}
+  return '';
+};
+
+const rawUrl = getLocalCredential('supabase_url') || (import.meta as any).env.NEXT_PUBLIC_SUPABASE_URL || (import.meta as any).env.VITE_SUPABASE_URL;
+const rawKey = getLocalCredential('supabase_anon_key') || (import.meta as any).env.NEXT_PUBLIC_SUPABASE_ANON_KEY || (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
 const supabaseUrl = sanitizeUrl(rawUrl) || 'https://placeholder.supabase.co';
 const supabaseAnonKey = sanitizeKey(rawKey) || 'placeholder-anon-key';
@@ -230,6 +239,19 @@ export const fetchAndSyncPatients = async (): Promise<{ data: any[]; isSynced: b
       let { error: insertError } = await supabase
         .from('patients')
         .insert(sanitizedToInsert);
+
+      // Handle missing 'created_by' column on old Supabase tables on the fly
+      if (insertError && (insertError.message?.includes('created_by') || insertError.code === '42703')) {
+        console.warn('Column created_by not found in Supabase table. Retrying insert without it...');
+        const retriedPayload = sanitizedToInsert.map(p => {
+          const { created_by, ...rest } = p as any;
+          return rest;
+        });
+        const { error: retryError } = await supabase
+          .from('patients')
+          .insert(retriedPayload);
+        insertError = retryError;
+      }
 
       if (insertError) {
         console.error('Error auto-syncing local patients to Supabase:', insertError);
