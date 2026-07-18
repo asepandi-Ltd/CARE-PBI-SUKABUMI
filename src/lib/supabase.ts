@@ -81,93 +81,53 @@ export const generateUUID = () => {
   });
 };
 
-// Standard mock initial patients with valid UUIDs
-export const INITIAL_MOCK_PATIENTS = [
-  {
-    id: 'd3b07384-d113-4c54-9e8c-851720d20001',
-    no_spr: 'SPR/2026/001',
-    tanggal_spr: '2026-07-01',
-    nama: 'Budi Santoso',
-    nik: '3202011204850001',
-    no_kk: '3202011204850002',
-    alamat: 'Jl. Ahmad Yani No. 45, Sukabumi',
-    tanggal_lahir: '1985-04-12',
-    no_hp: '081234567890',
-    cara_bayar: 'KTP/KK',
-    jenis_pasien: 'IGD',
-    status_pengajuan: 'Menunggu Verifikasi',
-    penyebab_penolakan: '',
-    status_warning: 'aman',
-    doc_spr: true,
-    doc_ktp: true,
-    doc_kk: true,
-    created_at: '2026-07-01T10:00:00Z',
-    updated_at: '2026-07-01T10:00:00Z'
-  },
-  {
-    id: 'd3b07384-d113-4c54-9e8c-851720d20002',
-    no_spr: 'SPR/2026/002',
-    tanggal_spr: '2026-07-02',
-    nama: 'Siti Aminah',
-    nik: '3202014508900003',
-    no_kk: '3202014508900004',
-    alamat: 'Kp. Caringin RT 02/RW 05, Baros, Sukabumi',
-    tanggal_lahir: '1990-08-15',
-    no_hp: '082198765432',
-    cara_bayar: 'Tunai',
-    jenis_pasien: 'Rawat Inap',
-    status_pengajuan: 'Disetujui',
-    penyebab_penolakan: '',
-    status_warning: 'aman',
-    doc_spr: true,
-    doc_ktp: true,
-    doc_kk: true,
-    created_at: '2026-07-02T11:30:00Z',
-    updated_at: '2026-07-03T09:00:00Z'
-  },
-  {
-    id: 'd3b07384-d113-4c54-9e8c-851720d20003',
-    no_spr: 'SPR/2026/003',
-    tanggal_spr: '2026-07-03',
-    nama: 'Asep Sunandar',
-    nik: '3202021109780005',
-    no_kk: '3202021109780006',
-    alamat: 'Cikole RT 01/RW 02, Sukabumi',
-    tanggal_lahir: '1978-09-11',
-    no_hp: '085712345678',
-    cara_bayar: 'BPJS Non Aktif',
-    jenis_pasien: 'Rawat Inap',
-    status_pengajuan: 'Ditolak',
-    penyebab_penolakan: 'Dokumen KK kurang jelas / tidak terbaca',
-    status_warning: 'warning',
-    doc_spr: true,
-    doc_ktp: false,
-    doc_kk: true,
-    created_at: '2026-07-03T14:15:00Z',
-    updated_at: '2026-07-04T10:30:00Z'
-  }
-];
+// Target names to delete from all databases (one-time cleanup)
+const TARGETS_TO_DELETE = ['as', 'asep sunandar', 'siti aminah', 'budi santoso'];
+
+// Standard mock initial patients with valid UUIDs (empty since the requested ones are deleted)
+export const INITIAL_MOCK_PATIENTS: any[] = [];
 
 export const getLocalPatients = (): any[] => {
   const saved = localStorage.getItem('care_pbi_patients');
+  let patients: any[] = [];
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        // Enforce valid UUIDs on older non-UUID local records
-        return parsed.map(p => {
-          if (!p.id || p.id.length < 15 || !p.id.includes('-')) {
-            p.id = generateUUID();
-          }
-          return p;
-        });
+        patients = parsed;
       }
     } catch (e) {
       // JSON parse error
     }
+  } else {
+    patients = INITIAL_MOCK_PATIENTS;
   }
-  localStorage.setItem('care_pbi_patients', JSON.stringify(INITIAL_MOCK_PATIENTS));
-  return INITIAL_MOCK_PATIENTS;
+
+  // Check if one-time cleanup has been completed
+  const hasCleaned = localStorage.getItem('care_pbi_cleaned_initial_targets_v3') === 'true';
+  let filtered = patients;
+
+  if (!hasCleaned) {
+    // Filter out the specified names (case-insensitive and trimmed)
+    filtered = patients.filter(p => {
+      const nameLower = (p.nama || '').toLowerCase().trim();
+      return !TARGETS_TO_DELETE.includes(nameLower);
+    });
+
+    // Save back to local storage
+    localStorage.setItem('care_pbi_patients', JSON.stringify(filtered));
+    
+    // Set flag indicating local cleanup is complete
+    localStorage.setItem('care_pbi_cleaned_initial_targets_v3', 'true');
+  }
+
+  // Enforce valid UUIDs on older non-UUID local records
+  return filtered.map(p => {
+    if (!p.id || p.id.length < 15 || !p.id.includes('-')) {
+      p.id = generateUUID();
+    }
+    return p;
+  });
 };
 
 const isValidUUID = (id: string | null | undefined): boolean => {
@@ -221,7 +181,36 @@ export const fetchAndSyncPatients = async (): Promise<{ data: any[]; isSynced: b
       throw fetchError;
     }
 
-    const remotePatients = remoteList || [];
+    const remotePatientsAll = remoteList || [];
+    
+    // One-time auto-clean target deleted patients from Supabase if found
+    const hasCleanedRemote = localStorage.getItem('care_pbi_cleaned_remote_v3') === 'true';
+    let remotePatients = remotePatientsAll;
+
+    if (!hasCleanedRemote) {
+      const matchingToDelete = remotePatientsAll.filter(p => {
+        const nameLower = (p.nama || '').toLowerCase().trim();
+        return TARGETS_TO_DELETE.includes(nameLower);
+      });
+
+      if (matchingToDelete.length > 0) {
+        const idsToDelete = matchingToDelete.map(p => p.id);
+        console.warn('Membersihkan data target dari Supabase:', idsToDelete);
+        try {
+          await supabase.from('patients').delete().in('id', idsToDelete);
+        } catch (delErr) {
+          console.error('Error deleting target entries:', delErr);
+        }
+      }
+
+      remotePatients = remotePatientsAll.filter(p => {
+        const nameLower = (p.nama || '').toLowerCase().trim();
+        return !TARGETS_TO_DELETE.includes(nameLower);
+      });
+
+      localStorage.setItem('care_pbi_cleaned_remote_v3', 'true');
+    }
+    
     const remoteIdSet = new Set(remotePatients.map(p => p.id));
     const remoteNikSet = new Set(remotePatients.map(p => p.nik));
     const remoteSprSet = new Set(remotePatients.map(p => p.no_spr));
@@ -233,8 +222,24 @@ export const fetchAndSyncPatients = async (): Promise<{ data: any[]; isSynced: b
       !remoteSprSet.has(p.no_spr)
     );
 
-    if (unsyncedLocal.length > 0) {
-      const sanitizedToInsert = unsyncedLocal.map(p => sanitizePatientForSupabase(p));
+    // Ensure we don't have duplicate NIK or SPR *within* unsyncedLocal itself
+    const uniqueUnsyncedLocal: any[] = [];
+    const seenNik = new Set<string>();
+    const seenSpr = new Set<string>();
+    for (const p of unsyncedLocal) {
+      const pNik = p.nik?.trim();
+      const pSpr = p.no_spr?.trim();
+      if (pNik && pSpr && !seenNik.has(pNik) && !seenSpr.has(pSpr)) {
+        seenNik.add(pNik);
+        seenSpr.add(pSpr);
+        uniqueUnsyncedLocal.push(p);
+      } else {
+        console.warn(`Mengabaikan data lokal duplikat saat sinkronisasi: ${p.nama} (NIK: ${pNik})`);
+      }
+    }
+
+    if (uniqueUnsyncedLocal.length > 0) {
+      const sanitizedToInsert = uniqueUnsyncedLocal.map(p => sanitizePatientForSupabase(p));
       
       let { error: insertError } = await supabase
         .from('patients')
@@ -253,18 +258,77 @@ export const fetchAndSyncPatients = async (): Promise<{ data: any[]; isSynced: b
         insertError = retryError;
       }
 
+      // If bulk insert fails, run robust one-by-one retry to isolate specific duplicates/errors
       if (insertError) {
-        console.error('Error auto-syncing local patients to Supabase:', insertError);
-        // CRITICAL: DO NOT overwrite local storage to delete unsynced data!
-        // We will merge local and remote lists instead!
-        const mergedList = [...remotePatients];
-        unsyncedLocal.forEach(localP => {
-          if (!remoteIdSet.has(localP.id) && !remoteNikSet.has(localP.nik)) {
+        console.warn('Bulk insert failed, retrying one-by-one to isolate conflicts:', insertError.message);
+        let syncFailedCount = 0;
+        let duplicateNikCount = 0;
+        let duplicateSprCount = 0;
+        let actualSyncError: string | null = null;
+
+        for (const item of sanitizedToInsert) {
+          let { error: singleError } = await supabase
+            .from('patients')
+            .insert([item]);
+          
+          if (singleError && (singleError.message?.includes('created_by') || singleError.code === '42703')) {
+            const { created_by, ...rest } = item as any;
+            const { error: retrySingleError } = await supabase
+              .from('patients')
+              .insert([rest]);
+            singleError = retrySingleError;
+          }
+
+          if (singleError) {
+            console.error(`Gagal sinkronisasi pasien ${item.nama} (NIK: ${item.nik}):`, singleError);
+            const errMsg = singleError.message || '';
+            const isDuplicate = singleError.code === '23505' || 
+                                errMsg.includes('patients_nik_key') || 
+                                errMsg.includes('duplicate key') || 
+                                errMsg.includes('violates unique constraint');
+            
+            if (isDuplicate) {
+              if (errMsg.includes('nik') || errMsg.includes('patients_nik_key')) {
+                duplicateNikCount++;
+              } else if (errMsg.includes('no_spr') || errMsg.includes('patients_no_spr_key')) {
+                duplicateSprCount++;
+              } else {
+                duplicateNikCount++;
+              }
+            } else {
+              syncFailedCount++;
+              actualSyncError = singleError.message;
+            }
+          }
+        }
+
+        if (duplicateNikCount > 0 || duplicateSprCount > 0) {
+          console.warn(`Selesai sinkronisasi mandiri. Ditemukan ${duplicateNikCount} NIK duplikat dan ${duplicateSprCount} SPR duplikat di server.`);
+        }
+        
+        // Fetch again after one-by-one attempts to get successful insertions
+        const { data: updatedRemote } = await supabase
+          .from('patients')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        const mergedRemote = updatedRemote || remotePatients;
+        const finalMergedIdSet = new Set(mergedRemote.map(p => p.id));
+        const finalMergedNikSet = new Set(mergedRemote.map(p => p.nik));
+        
+        const mergedList = [...mergedRemote];
+        uniqueUnsyncedLocal.forEach(localP => {
+          if (!finalMergedIdSet.has(localP.id) && !finalMergedNikSet.has(localP.nik)) {
             mergedList.push(localP);
           }
         });
+        
         localStorage.setItem('care_pbi_patients', JSON.stringify(mergedList));
-        return { data: mergedList, isSynced: false, error: insertError.message };
+        return { 
+          data: mergedList, 
+          isSynced: duplicateNikCount === 0 && duplicateSprCount === 0 && syncFailedCount === 0, 
+          error: actualSyncError || (duplicateNikCount > 0 || duplicateSprCount > 0 ? 'Beberapa data gagal disinkronkan karena kesamaan NIK/No. SPR unik di server.' : null)
+        };
       } else {
         // Fetch again after sync to get updated remote state
         const { data: updatedRemote } = await supabase
