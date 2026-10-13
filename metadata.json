@@ -1,0 +1,6 @@
+{
+  "name": "CARE-PBI Sukabumi",
+  "description": "Sistem Rekap & Verifikasi Konversi Pasien ke BPJS PBI",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
